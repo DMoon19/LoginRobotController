@@ -22,7 +22,7 @@ const App = () => {
   const [robotStatus, setRobotStatus] = useState('IDLE');
   const [leftSpeed, setLeftSpeed] = useState(255);
   const [rightSpeed, setRightSpeed] = useState(255);
-  const [serverUrl, setServerUrl] = useState('http://TU_IP_PUBLICA:3001');
+  const [serverUrl, setServerUrl] = useState('http://184.72.132.47:3001');
   const [esp32Ip, setEsp32Ip] = useState("192.168.4.1");
 
   
@@ -99,7 +99,7 @@ const App = () => {
         params.set('right', rightSpeed.toString());
       }
       
-      const response = await fetch(`http://${esp32Ip}/cmd`, {
+      const response = await fetch(`${serverUrl}/entities`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
