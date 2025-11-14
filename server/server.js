@@ -5,16 +5,14 @@ const app = express();
 const PORT = 3001;
 
 // Middleware
-app.use(cors()); // Permitir solicitudes desde cualquier origen
+app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Estado actual del comando (lo que el ESP32 leerá)
+// Estado actual del comando (formato para ESP32)
 let currentCommand = {
-  action: 'stop',
-  leftSpeed: 255,
-  rightSpeed: 255,
-  timestamp: new Date().toISOString()
+  command: 'STOP',
+  speedness: 0
 };
 
 // Historial de comandos
@@ -24,6 +22,21 @@ const MAX_HISTORY = 50;
 // Telemetría del robot
 let telemetryData = [];
 const MAX_TELEMETRY = 100;
+
+// ===== FUNCIÓN: Convertir formato React → ESP32 =====
+function convertToESP32Format(action, leftSpeed, rightSpeed) {
+  // Convertir acción a mayúsculas
+  let command = action.toUpperCase();
+  
+  // Calcular velocidad promedio (0-255 → 0-100)
+  let avgSpeed = Math.round((leftSpeed + rightSpeed) / 2);
+  let speedness = Math.round((avgSpeed / 255) * 100);
+  
+  return {
+    command: command,
+    speedness: speedness
+  };
+}
 
 // ===== RUTAS PARA LA WEB APP =====
 
@@ -35,38 +48,45 @@ app.post('/entities', (req, res) => {
     return res.status(400).json({ error: 'Se requiere el campo action' });
   }
 
-  // Actualizar comando actual
-  currentCommand = {
-    action: action,
+  // Convertir formato React → ESP32
+  currentCommand = convertToESP32Format(
+    action, 
+    leftSpeed || 255, 
+    rightSpeed || 255
+  );
+
+  // Guardar en historial (formato original para referencia)
+  commandHistory.unshift({ 
+    action,
     leftSpeed: leftSpeed || 255,
     rightSpeed: rightSpeed || 255,
+    convertedTo: currentCommand,
     timestamp: new Date().toISOString()
-  };
-
-  // Guardar en historial
-  commandHistory.unshift({ ...currentCommand });
+  });
+  
   if (commandHistory.length > MAX_HISTORY) {
     commandHistory.pop();
   }
 
-  console.log(`[WEB] Comando recibido: ${action} (L:${currentCommand.leftSpeed}, R:${currentCommand.rightSpeed})`);
+  console.log(`[WEB → SERVER] Recibido: ${action} (L:${leftSpeed || 255}, R:${rightSpeed || 255})`);
+  console.log(`[SERVER → ESP32] Convertido: ${currentCommand.command} @ ${currentCommand.speedness}%`);
 
   res.json({
     state: action.toUpperCase(),
-    message: 'Comando recibido',
-    command: currentCommand
+    message: 'Comando recibido y convertido',
+    sent: currentCommand
   });
 });
 
 // ===== RUTAS PARA EL ESP32 =====
 
-// GET /entities - ESP32 lee el comando actual
+// GET /entities - ESP32 lee el comando actual (formato ESP32)
 app.get('/entities', (req, res) => {
-  console.log(`[ESP32] Comando leído: ${currentCommand.action}`);
+  console.log(`[ESP32 ← SERVER] Enviando: ${currentCommand.command} @ ${currentCommand.speedness}%`);
   res.json(currentCommand);
 });
 
-// POST /telemetry - ESP32 envía telemetría (GPS, temperatura, humedad)
+// POST /telemetry - ESP32 envía telemetría
 app.post('/telemetry', (req, res) => {
   const { latitude, longitude, temperature, humidity, counter } = req.body;
   
@@ -234,9 +254,12 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Robot Tank Control Server`);
   console.log(`${'='.repeat(50)}`);
   console.log(`📡 Puerto: ${PORT}`);
-  console.log(`🌐 Dashboard: http://localhost:${PORT}`);
+  console.log(`🌐 Dashboard: http://54.82.198.234:${PORT}`);
   console.log(`\n📋 Endpoints:`);
   console.log(`   POST /entities     → Recibir comandos (React)`);
   console.log(`   GET  /entities     → Enviar comandos (ESP32)`);
   console.log(`   GET  /status       → Estado del sistema`);
+  console.log(`   GET  /history      → Historial de comandos`);
+  console.log(`\n🔄 Conversión automática: React format → ESP32 format`);
+  console.log(`${'='.repeat(50)}\n`);
 });
