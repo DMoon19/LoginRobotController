@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
 import { LogOut, Home, Database, User, Lock, Radio } from 'lucide-react';
 
-
 const ADMIN_USER = 'admin';
 const ADMIN_PASSWORD = '1000874956';
 
-interface Usuario {
-  id: number;
-  nombre: string;
-  email: string;
-  rol: string;
+interface Telemetria {
+  latitude: number;
+  longitude: number;
+  temperature: number;
+  humidity: number;
+  counter: number;
+  timestamp: string;
 }
 
 const App = () => {
@@ -22,18 +23,11 @@ const App = () => {
   const [robotStatus, setRobotStatus] = useState('IDLE');
   const [leftSpeed, setLeftSpeed] = useState(255);
   const [rightSpeed, setRightSpeed] = useState(255);
-  const [serverUrl, setServerUrl] = useState('http://184.72.132.47:3001');
-  const [esp32Ip, setEsp32Ip] = useState("192.168.4.1");
-
+  const [serverUrl, setServerUrl] = useState('http://54.82.198.234:3001');
   
-  const [usuarios, setUsuarios] = useState<Usuario[]>([
-    { id: 1, nombre: 'Juan Pérez', email: 'juan@example.com', rol: 'Usuario' },
-    { id: 2, nombre: 'María García', email: 'maria@example.com', rol: 'Editor' },
-    { id: 3, nombre: 'Carlos López', email: 'carlos@example.com', rol: 'Usuario' }
-  ]);
-  const [isEditing, setIsEditing] = useState(false);
-  const [currentUser, setCurrentUser] = useState<Usuario>({ id: 0, nombre: '', email: '', rol: '' });
-  const [showForm, setShowForm] = useState(false);
+  const [telemetriaData, setTelemetriaData] = useState<Telemetria[]>([]);
+  const [isLoadingTelemetry, setIsLoadingTelemetry] = useState(false);
+  const [telemetryError, setTelemetryError] = useState('');
 
   const handleLogin = () => {
     if (username === ADMIN_USER && password === ADMIN_PASSWORD) {
@@ -51,60 +45,46 @@ const App = () => {
     setCurrentSection('inicio');
   };
 
-  const handleCreate = () => {
-    setCurrentUser({ id: 0, nombre: '', email: '', rol: '' });
-    setIsEditing(false);
-    setShowForm(true);
-  };
-
-  const handleEdit = (user: Usuario) => {
-    setCurrentUser(user);
-    setIsEditing(true);
-    setShowForm(true);
-  };
-
-  const handleDelete = (id: number) => {
-    if (window.confirm('¿Está seguro de eliminar este usuario?')) {
-      setUsuarios(usuarios.filter(u => u.id !== id));
+  const loadTelemetryData = async () => {
+    setIsLoadingTelemetry(true);
+    setTelemetryError('');
+    try {
+      const response = await fetch('http://54.82.198.234:3001/telemetry');
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const result = await response.json();
+      console.log('Respuesta de telemetría:', result);
+      
+      // Manejar tanto formato directo como formato con "data"
+      const dataArray = result.data ? result.data : (Array.isArray(result) ? result : []);
+      setTelemetriaData(dataArray);
+    } catch (error) {
+      setTelemetryError(error instanceof Error ? error.message : 'Error al cargar datos');
+      console.error('Error cargando telemetría:', error);
+    } finally {
+      setIsLoadingTelemetry(false);
     }
   };
 
-  const handleSave = () => {
-    if (!currentUser.nombre || !currentUser.email || !currentUser.rol) {
-      window.alert('Por favor complete todos los campos');
-      return;
-    }
-    
-    if (isEditing) {
-      setUsuarios(usuarios.map(u => u.id === currentUser.id ? currentUser : u));
-    } else {
-      const newId = Math.max(...usuarios.map(u => u.id), 0) + 1;
-      setUsuarios([...usuarios, { ...currentUser, id: newId }]);
-    }
-    setShowForm(false);
-    setCurrentUser({ id: 0, nombre: '', email: '', rol: '' });
-  };
-
-  const handleCancel = () => {
-    setShowForm(false);
-    setCurrentUser({ id: 0, nombre: '', email: '', rol: '' });
-  };
+  const latestData = telemetriaData.length > 0 ? telemetriaData[0] : null;
 
   const sendRobotCommand = async (action: string) => {
     setRobotStatus('Enviando...');
     try {
-      const params = new URLSearchParams({ action });
-      if (action === 'speed') {
-        params.set('left', leftSpeed.toString());
-        params.set('right', rightSpeed.toString());
-      }
+      const commandData = {
+        action: action,
+        leftSpeed: leftSpeed,
+        rightSpeed: rightSpeed,
+        timestamp: new Date().toISOString()
+      };
       
       const response = await fetch(`${serverUrl}/entities`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Type': 'application/json',
         },
-        body: params.toString(),
+        body: JSON.stringify(commandData),
       });
 
       if (!response.ok) {
@@ -112,7 +92,8 @@ const App = () => {
       }
 
       const data = await response.json();
-      setRobotStatus(data.state || 'OK');
+      setRobotStatus(data.state || action.toUpperCase());
+      console.log('Comando enviado:', commandData);
     } catch (error) {
       setRobotStatus(`ERROR: ${error instanceof Error ? error.message : 'Conexión fallida'}`);
       console.error('Error enviando comando:', error);
@@ -212,7 +193,7 @@ const App = () => {
               }`}
             >
               <Database className="w-5 h-5" />
-              <span className="font-medium">Gestión del CRUD</span>
+              <span className="font-medium">Gestión de Telemetría</span>
             </button>
             <button
               onClick={() => setCurrentSection('robot')}
@@ -242,8 +223,8 @@ const App = () => {
               </p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="bg-blue-50 p-6 rounded-lg">
-                  <h3 className="text-xl font-semibold text-blue-900 mb-2">Usuarios</h3>
-                  <p className="text-3xl font-bold text-blue-600">{usuarios.length}</p>
+                  <h3 className="text-xl font-semibold text-blue-900 mb-2">Registros</h3>
+                  <p className="text-3xl font-bold text-blue-600">{telemetriaData.length}</p>
                 </div>
                 <div className="bg-green-50 p-6 rounded-lg">
                   <h3 className="text-xl font-semibold text-green-900 mb-2">Sistema</h3>
@@ -258,109 +239,111 @@ const App = () => {
           )}
 
           {currentSection === 'crud' && (
-            <div className="bg-white rounded-lg shadow-md p-8">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-3xl font-bold text-gray-800">Gestión de Usuarios</h2>
-                {!showForm && (
+            <div className="space-y-6">
+              <div className="bg-white rounded-lg shadow-md p-8">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-3xl font-bold text-gray-800">Gestión de Telemetría</h2>
                   <button
-                    onClick={handleCreate}
-                    className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition"
+                    onClick={loadTelemetryData}
+                    disabled={isLoadingTelemetry}
+                    className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition disabled:bg-gray-400"
                   >
-                    Nuevo Usuario
+                    {isLoadingTelemetry ? 'Cargando...' : 'Cargar Telemetría'}
                   </button>
-                )}
-              </div>
+                </div>
 
-              {showForm ? (
-                <div className="space-y-4">
-                  <h3 className="text-xl font-semibold text-gray-700 mb-4">
-                    {isEditing ? 'Editar Usuario' : 'Crear Usuario'}
-                  </h3>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Nombre</label>
-                    <input
-                      type="text"
-                      value={currentUser.nombre}
-                      onChange={(e) => setCurrentUser({...currentUser, nombre: e.target.value})}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
+                {telemetryError && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">
+                    Error: {telemetryError}
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-                    <input
-                      type="email"
-                      value={currentUser.email}
-                      onChange={(e) => setCurrentUser({...currentUser, email: e.target.value})}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
+                )}
+
+                {latestData && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-6 rounded-lg border border-blue-200">
+                      <h3 className="text-lg font-semibold text-blue-900 mb-2">Última Temperatura</h3>
+                      <p className="text-4xl font-bold text-blue-600">{latestData.temperature.toFixed(2)}°C</p>
+                      <p className="text-sm text-blue-700 mt-2">
+                        {new Date(latestData.timestamp).toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="bg-gradient-to-br from-green-50 to-green-100 p-6 rounded-lg border border-green-200">
+                      <h3 className="text-lg font-semibold text-green-900 mb-2">Última Humedad</h3>
+                      <p className="text-4xl font-bold text-green-600">{latestData.humidity.toFixed(2)}%</p>
+                      <p className="text-sm text-green-700 mt-2">
+                        {new Date(latestData.timestamp).toLocaleString()}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Rol</label>
-                    <select
-                      value={currentUser.rol}
-                      onChange={(e) => setCurrentUser({...currentUser, rol: e.target.value})}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                    >
-                      <option value="">Seleccione un rol</option>
-                      <option value="Usuario">Usuario</option>
-                      <option value="Editor">Editor</option>
-                      <option value="Administrador">Administrador</option>
-                    </select>
+                )}
+
+                {latestData && (
+                  <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
+                    <h3 className="text-xl font-semibold text-gray-800 mb-4">Última Ubicación</h3>
+                    <div className="bg-gray-100 rounded-lg overflow-hidden" style={{height: '400px'}}>
+                      <iframe
+                        width="100%"
+                        height="100%"
+                        style={{border: 0}}
+                        src={`https://www.openstreetmap.org/export/embed.html?bbox=${latestData.longitude-0.01},${latestData.latitude-0.01},${latestData.longitude+0.01},${latestData.latitude+0.01}&layer=mapnik&marker=${latestData.latitude},${latestData.longitude}`}
+                        title="Mapa de ubicación"
+                      />
+                    </div>
+                    <div className="mt-3 text-sm text-gray-600">
+                      <p><strong>Latitud:</strong> {latestData.latitude.toFixed(6)}</p>
+                      <p><strong>Longitud:</strong> {latestData.longitude.toFixed(6)}</p>
+                    </div>
                   </div>
-                  <div className="flex gap-4 pt-4">
-                    <button
-                      onClick={handleSave}
-                      className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition"
-                    >
-                      Guardar
-                    </button>
-                    <button
-                      onClick={handleCancel}
-                      className="bg-gray-500 text-white px-6 py-2 rounded-lg hover:bg-gray-600 transition"
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-                </div>
-              ) : (
+                )}
+
                 <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rol</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {usuarios.map((user) => (
-                        <tr key={user.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{user.id}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{user.nombre}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{user.email}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{user.rol}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-                            <button
-                              onClick={() => handleEdit(user)}
-                              className="text-blue-600 hover:text-blue-900"
-                            >
-                              Editar
-                            </button>
-                            <button
-                              onClick={() => handleDelete(user.id)}
-                              className="text-red-600 hover:text-red-900"
-                            >
-                              Eliminar
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <h3 className="text-xl font-semibold text-gray-800 mb-4">Historial de Datos</h3>
+                  {telemetriaData.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      No hay datos cargados. Presiona "Cargar Telemetría" para obtener los datos.
+                    </div>
+                  ) : (
+                    <div className="max-h-96 overflow-y-auto">
+                      <table className="w-full">
+                        <thead className="bg-gray-50 sticky top-0">
+                          <tr>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Timestamp</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Latitud</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Longitud</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Temperatura</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Humedad</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Counter</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {telemetriaData.slice().reverse().map((item, index) => (
+                            <tr key={index} className="hover:bg-gray-50">
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                                {new Date(item.timestamp).toLocaleString()}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                                {item.latitude.toFixed(6)}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                                {item.longitude.toFixed(6)}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                                {item.temperature.toFixed(2)}°C
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                                {item.humidity.toFixed(2)}%
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                                {item.counter}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
           )}
 
@@ -369,15 +352,15 @@ const App = () => {
               <h2 className="text-3xl font-bold text-gray-800 mb-6">Control del Robot Tank</h2>
               
               <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">IP del ESP32</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">URL del Servidor</label>
                 <input
                   type="text"
-                  value={esp32Ip}
-                  onChange={(e) => setEsp32Ip(e.target.value)}
-                  className="w-64 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                  placeholder="192.168.4.1"
+                  value={serverUrl}
+                  onChange={(e) => setServerUrl(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                  placeholder="http://54.82.198.234:3001"
                 />
-                <p className="text-sm text-gray-500 mt-1">Conéctate a la red WiFi: TankController (Contraseña: tank12345)</p>
+                <p className="text-sm text-gray-500 mt-1">Servidor que recibirá los comandos (sin / al final)</p>
               </div>
 
               <div className="grid grid-cols-3 gap-4 max-w-md mx-auto mb-8">
